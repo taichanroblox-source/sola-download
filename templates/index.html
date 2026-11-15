@@ -178,6 +178,27 @@ $('convert-run').onclick=async()=>{
  }catch(e){setStatus('convert-status',e.message||'変換できなかったよ。','error')}
  finally{btn.disabled=false}
 };
+
+/* Keep the Render service responsive while this page is open. */
+const HEARTBEAT_INTERVAL_MS = 10 * 60 * 1000;
+let lastHeartbeat = Date.now();
+async function pingServer(){
+ lastHeartbeat = Date.now();
+ try{
+  await fetch('/health?heartbeat='+lastHeartbeat,{
+   method:'GET',cache:'no-store',credentials:'same-origin',
+   signal:AbortSignal.timeout(12000)
+  });
+ }catch(e){
+  // Network outages or sleeping servers are handled by the next heartbeat.
+ }
+}
+setInterval(pingServer,HEARTBEAT_INTERVAL_MS);
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden && Date.now()-lastHeartbeat>=HEARTBEAT_INTERVAL_MS){
+  pingServer();
+ }
+});
 </script>
 </body>
 </html>
