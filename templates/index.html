@@ -58,8 +58,6 @@ footer{text-align:center;color:#bba4bf;font-size:12px;padding:32px 16px;line-hei
 <section class="hero"><h1>欲しいファイルを、もっと簡単に。</h1><p>サービスを選んで、ダウンロードやファイル変換をしよう。</p></section>
 <nav class="tabs" role="tablist" aria-label="ダウンロードの種類">
 <button class="tab" role="tab" aria-selected="true" aria-controls="scratch" data-tab="scratch">Scratch</button>
-<button class="tab" role="tab" aria-selected="false" aria-controls="youtube" data-tab="youtube">YouTube</button>
-<button class="tab" role="tab" aria-selected="false" aria-controls="niconico" data-tab="niconico">ニコニコ</button>
 <button class="tab" role="tab" aria-selected="false" aria-controls="convert" data-tab="convert">ファイル変換</button>
 </nav>
 
@@ -80,36 +78,6 @@ footer{text-align:center;color:#bba4bf;font-size:12px;padding:32px 16px;line-hei
 </div>
 </section>
 
-<section class="panel" id="youtube" role="tabpanel" hidden>
-<h2>YouTube動画をダウンロード</h2>
-<p class="description">保存する権利・許可がある公開動画のURLを入力してね。ログインやDRM解除が必要な動画には対応していないよ。</p>
-<label for="youtube-url">YouTubeの動画URL</label>
-<input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="url">
-<button class="primary full" id="youtube-load">動画情報を読み込む</button>
-<p class="status" id="youtube-status" role="status"></p>
-<div class="output" id="youtube-output" hidden>
-<img id="youtube-thumb" alt="動画サムネイル">
-<h3 id="youtube-title"></h3><p id="youtube-author"></p>
-<button class="primary full" id="youtube-download">動画をダウンロード</button>
-<p class="status" id="youtube-progress" role="status"></p>
-</div>
-<div class="info">動画の取得には時間がかかることがあるよ。Renderの無料プランでは大きな動画がタイムアウトする場合があるよ。配信元の利用条件にも従ってね。</div>
-</section>
-<section class="panel" id="niconico" role="tabpanel" hidden>
-<h2>ニコニコ動画をダウンロード</h2>
-<p class="description">保存する権利・許可がある公開動画のURLを入力してね。ログインやDRM解除が必要な動画には対応していないよ。</p>
-<label for="niconico-url">ニコニコの動画URL</label>
-<input id="niconico-url" type="url" placeholder="https://www.nicovideo.jp/watch/sm..." autocomplete="url">
-<button class="primary full" id="niconico-load">動画情報を読み込む</button>
-<p class="status" id="niconico-status" role="status"></p>
-<div class="output" id="niconico-output" hidden>
-<img id="niconico-thumb" alt="動画サムネイル">
-<h3 id="niconico-title"></h3><p id="niconico-author"></p>
-<button class="primary full" id="niconico-download">動画をダウンロード</button>
-<p class="status" id="niconico-progress" role="status"></p>
-</div>
-<div class="info">動画の取得には時間がかかることがあるよ。Renderの無料プランでは大きな動画がタイムアウトする場合があるよ。配信元の利用条件にも従ってね。</div>
-</section>
 <section class="panel" id="convert" role="tabpanel" hidden>
 <h2>画像の形式を変換</h2>
 <p class="description">自分の画像を選ぶだけ。画像データはサーバーにアップロードされず、端末内で変換するよ。</p>
@@ -124,7 +92,7 @@ footer{text-align:center;color:#bba4bf;font-size:12px;padding:32px 16px;line-hei
 <p class="status" id="convert-status" role="status"></p>
 </section>
 </main>
-<footer>© SOLA DOWNLOAD — Scratch・YouTube・ニコニコの各公式サービスとは関係のない非公式ツールです。</footer>
+<footer>© SOLA DOWNLOAD — Scratch公式とは関係のない非公式ツールです。</footer>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -137,7 +105,7 @@ document.querySelectorAll('[data-tab]').forEach(button=>{
  });
 });
 const initial=location.hash.slice(1);
-if(['scratch','youtube','niconico','convert'].includes(initial))document.querySelector('[data-tab="'+initial+'"]').click();
+if(['scratch','convert'].includes(initial))document.querySelector('[data-tab="'+initial+'"]').click();
 
 let scratch=null;
 async function loadScratch(){
@@ -178,53 +146,6 @@ function saveBlob(blob,name){
 $('scratch-load').onclick=loadScratch;$('scratch-download').onclick=downloadScratch;$('scratch-retry').onclick=downloadScratch;
 $('scratch-url').addEventListener('keydown',e=>{if(e.key==='Enter')loadScratch()});
 
-const videoState={youtube:null,niconico:null};
-async function loadVideo(service){
- const btn=$(service+'-load');btn.disabled=true;$(service+'-output').hidden=true;
- setStatus(service+'-status','動画情報を読み込み中…');
- try{
-  const url=$(service+'-url').value.trim();
-  const r=await fetch('/api/video/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service,url})});
-  const data=await r.json();if(!r.ok)throw Error(data.error||'動画を読み込めなかったよ。');
-  videoState[service]={service,url};
-  $(service+'-title').textContent=data.title;
-  $(service+'-author').textContent='投稿者：'+data.author;
-  $(service+'-thumb').src=data.thumbnail||'';
-  $(service+'-thumb').hidden=!data.thumbnail;
-  $(service+'-output').hidden=false;
-  setStatus(service+'-status','動画を確認できたよ。','success');
-  setStatus(service+'-progress','');
- }catch(e){setStatus(service+'-status',e.message,'error')}
- finally{btn.disabled=false}
-}
-async function downloadVideo(service){
- const state=videoState[service];if(!state)return;
- const btn=$(service+'-download');btn.disabled=true;
- setStatus(service+'-progress','動画を準備中…しばらく待ってね。');
- try{
-  const r=await fetch('/api/video/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
-  if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'ダウンロードに失敗したよ。')}
-  const total=Number(r.headers.get('content-length'))||0;
-  const reader=r.body.getReader(),chunks=[];let received=0;
-  while(true){
-   const {done,value}=await reader.read();if(done)break;
-   chunks.push(value);received+=value.byteLength;
-   setStatus(service+'-progress',total?'受信中 '+Math.floor(received/total*100)+'%':'受信中 '+(received/1048576).toFixed(1)+' MB');
-  }
-  const disp=r.headers.get('content-disposition')||'';
-  const encoded=/filename\*=UTF-8''([^;]+)/i.exec(disp);
-  let filename='video.mp4';
-  if(encoded){try{filename=decodeURIComponent(encoded[1])}catch(e){}}
-  saveBlob(new Blob(chunks,{type:'application/octet-stream'}),filename);
-  setStatus(service+'-progress','ダウンロード完了！','success');
- }catch(e){setStatus(service+'-progress',e.message,'error')}
- finally{btn.disabled=false}
-}
-for(const service of ['youtube','niconico']){
- $(service+'-load').onclick=()=>loadVideo(service);
- $(service+'-download').onclick=()=>downloadVideo(service);
- $(service+'-url').addEventListener('keydown',e=>{if(e.key==='Enter')loadVideo(service)});
-}
 let selectedImageURL=null;
 $('convert-file').addEventListener('change',()=>{
  const file=$('convert-file').files[0];

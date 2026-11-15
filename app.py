@@ -9,10 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, quote
 
 import requests
-from flask import Flask, render_template, request, jsonify, Response, send_file
-import tempfile
-import yt_dlp
-from pathlib import Path
+from flask import Flask, render_template, request, jsonify, Response
 
 app = Flask(__name__)
 HEADERS = {"User-Agent": "SOLA-DOWNLOAD/1.0 (Scratch project downloader)"}
@@ -126,104 +123,6 @@ def download(pid):
     except (requests.RequestException, ValueError, KeyError, TypeError, zipfile.BadZipFile):
         return jsonify(error="作品ファイルを作成できなかったよ。Scratch側の制限や一時的な通信障害の可能性があるよ。"), 502
 
-VIDEO_HOSTS = {
-    "youtube": {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"},
-    "niconico": {"nicovideo.jp", "www.nicovideo.jp", "nico.ms"}
-}
-MAX_VIDEO_BYTES = 250 * 1024 * 1024
-
-def video_url(url, service):
-    if service not in VIDEO_HOSTS or not isinstance(url, str):
-        raise ValueError("対応していないサービスだよ。")
-    parsed = urlparse(url.strip())
-    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.hostname not in VIDEO_HOSTS[service]:
-        raise ValueError("正しい動画URLを入力してね。")
-    if service == "youtube" and not (
-        re.fullmatch(r"/watch", parsed.path) and "v=" in parsed.query
-        or re.fullmatch(r"/shorts/[A-Za-z0-9_-]+/?", parsed.path)
-        or parsed.hostname == "youtu.be" and re.fullmatch(r"/[A-Za-z0-9_-]+/?", parsed.path)
-    ):
-        raise ValueError("YouTubeの動画URLを入力してね。")
-    if service == "niconico" and not (
-        re.fullmatch(r"/watch/(?:sm|nm|so)\d+/?", parsed.path)
-        or parsed.hostname == "nico.ms" and re.fullmatch(r"/(?:sm|nm|so)\d+/?", parsed.path)
-    ):
-        raise ValueError("ニコニコ動画のURLを入力してね。")
-    return parsed.geturl()
-
-def video_opts():
-    return {
-        "quiet": True, "no_warnings": True, "noplaylist": True,
-        "ignoreerrors": False, "skip_download": True,
-        "socket_timeout": 18, "retries": 1,
-        "extractor_retries": 1,
-        "format": "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]",
-    }
-
-@app.post("/api/video/info")
-def video_info():
-    payload = request.get_json(silent=True) or {}
-    try:
-        service = payload.get("service")
-        url = video_url(payload.get("url", ""), service)
-        with yt_dlp.YoutubeDL(video_opts()) as ydl:
-            info = ydl.extract_info(url, download=False)
-        if not info or info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
-            return jsonify(error="ライブ配信には対応していないよ。"), 400
-        return jsonify(
-            title=info.get("title") or "動画",
-            author=info.get("uploader") or "不明",
-            thumbnail=info.get("thumbnail") or "",
-            duration=info.get("duration"),
-            service=service,
-            url=url
-        )
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    except yt_dlp.utils.DownloadError as e:
-        app.logger.warning("Video info extractor failed for %s: %s", service, str(e)[:1200])
-        return jsonify(error="動画情報を取得できなかったよ。RenderのLogsで「Video info extractor failed」を確認してね。"), 502
-    except Exception:
-        app.logger.exception("Video info failed")
-        return jsonify(error="動画情報を取得できなかったよ。"), 502
-
-@app.post("/api/video/download")
-def video_download():
-    payload = request.get_json(silent=True) or {}
-    try:
-        url = video_url(payload.get("url", ""), payload.get("service"))
-    except ValueError as e:
-        return jsonify(error=str(e)), 400
-    try:
-        with tempfile.TemporaryDirectory() as temp:
-            options = video_opts()
-            options.update({
-                "skip_download": False,
-                "outtmpl": str(Path(temp) / "%(id)s.%(ext)s"),
-                "max_filesize": MAX_VIDEO_BYTES,
-                "overwrites": False,
-                "nopart": True,
-            })
-            with yt_dlp.YoutubeDL(options) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if not info or info.get("is_live"):
-                    return jsonify(error="この動画はダウンロードできないよ。"), 400
-            files = [p for p in Path(temp).iterdir() if p.is_file() and p.suffix.lower() in (".mp4", ".webm", ".mkv")]
-            if not files:
-                return jsonify(error="対応形式の動画ファイルを取得できなかったよ。"), 502
-            file = max(files, key=lambda p: p.stat().st_size)
-            if file.stat().st_size > MAX_VIDEO_BYTES:
-                return jsonify(error="250MB以下の動画に対応しているよ。"), 413
-            title = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", info.get("title") or "video").strip(" .")[:100] or "video"
-            content = file.read_bytes()
-            return send_file(io.BytesIO(content), mimetype="application/octet-stream", as_attachment=True,
-                             download_name=title + file.suffix)
-    except yt_dlp.utils.DownloadError as e:
-        app.logger.warning("Video download extractor failed: %s", str(e)[:1200])
-        return jsonify(error="動画を取得できなかったよ。RenderのLogsで「Video download extractor failed」を確認してね。"), 502
-    except Exception:
-        app.logger.exception("Video download failed")
-        return jsonify(error="動画のダウンロードに失敗したよ。"), 502
 
 if __name__ == "__main__":
     app.run(debug=os.environ.get("FLASK_DEBUG") == "1")
