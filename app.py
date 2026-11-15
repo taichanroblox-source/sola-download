@@ -126,10 +126,6 @@ def download(pid):
     except (requests.RequestException, ValueError, KeyError, TypeError, zipfile.BadZipFile):
         return jsonify(error="作品ファイルを作成できなかったよ。Scratch側の制限や一時的な通信障害の可能性があるよ。"), 502
 
-if __name__ == "__main__":
-    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")
-
-
 VIDEO_HOSTS = {
     "youtube": {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"},
     "niconico": {"nicovideo.jp", "www.nicovideo.jp", "nico.ms"}
@@ -184,8 +180,9 @@ def video_info():
         )
     except ValueError as e:
         return jsonify(error=str(e)), 400
-    except yt_dlp.utils.DownloadError:
-        return jsonify(error="動画情報を取得できなかったよ。非公開・ログイン必須・配信元の制限などが考えられるよ。"), 502
+    except yt_dlp.utils.DownloadError as e:
+        app.logger.warning("Video info extractor failed for %s: %s", service, str(e)[:1200])
+        return jsonify(error="動画情報を取得できなかったよ。RenderのLogsで「Video info extractor failed」を確認してね。"), 502
     except Exception:
         app.logger.exception("Video info failed")
         return jsonify(error="動画情報を取得できなかったよ。"), 502
@@ -221,8 +218,12 @@ def video_download():
             content = file.read_bytes()
             return send_file(io.BytesIO(content), mimetype="application/octet-stream", as_attachment=True,
                              download_name=title + file.suffix)
-    except yt_dlp.utils.DownloadError:
-        return jsonify(error="動画を取得できなかったよ。配信元の制限、ログイン必須、または対応形式がない可能性があるよ。"), 502
+    except yt_dlp.utils.DownloadError as e:
+        app.logger.warning("Video download extractor failed: %s", str(e)[:1200])
+        return jsonify(error="動画を取得できなかったよ。RenderのLogsで「Video download extractor failed」を確認してね。"), 502
     except Exception:
         app.logger.exception("Video download failed")
         return jsonify(error="動画のダウンロードに失敗したよ。"), 502
+
+if __name__ == "__main__":
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")
